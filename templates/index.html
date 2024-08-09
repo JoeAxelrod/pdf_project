@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Drop and Preview</title>
+    <style>
+        #preview_area {
+            width: 100%; /* Use 100% of the container width */
+            max-width: 550px; /* Maximum width */
+            margin: 0 auto; /* Center horizontally */
+            padding: 20px; /* Add some padding around the content */
+            border: 1px solid #ccc; /* Optional: adds a border around the preview area */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Optional: adds subtle shadow for better focus */
+        }
+    
+        #preview_area img {
+            width: 100%; /* Images will fill the container */
+            display: block; /* Ensures images appear in a block format */
+            margin-bottom: 10px; /* Space after each image */
+        }
+    
+        #preview_area hr {
+            margin-top: 10px; /* Space before each horizontal line */
+            background-color: #ccc; /* Optional: color of horizontal line */
+        }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
+    </script>
+</head>
+<body>
+    <div id="preview_area"></div>
+
+    <div id="drop_zone" style="width: 100%; height: 200px; border: 2px dashed #ccc;">
+        Drop PDFs here
+    </div>
+    <input type="file" id="fileInput" multiple accept="application/pdf" style="margin: 10px 0;">
+    <button id="create_pdf">Create Final PDF</button>
+    <script>
+        let files = []; // Globally scoped files array
+        const dropZone = document.getElementById('drop_zone');
+        const fileInput = document.getElementById('fileInput'); 
+        const previewArea = document.getElementById('preview_area');
+
+        dropZone.addEventListener('dragover', (event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+        });
+
+        dropZone.addEventListener('drop', async (event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            handleFiles(event.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (event) => {
+            handleFiles(event.target.files);
+        });
+
+        async function handleFiles(selectedFiles) {
+            files = [...files, ...Array.from(selectedFiles)]; // Append new files
+            let fileIndex = files.length - selectedFiles.length; // Start index for new files
+            for (let file of Array.from(selectedFiles)) {
+                if (file.type === 'application/pdf') {
+                    const imageData = await convertPDFtoImage(file);
+                    displayImage(imageData, ++fileIndex); // Pass index for numbering
+                }
+            }
+        }
+
+        // async function convertPDFtoImage(file) {
+        //     const fileReader = new FileReader();
+        //     return new Promise((resolve, reject) => {
+        //         fileReader.onload = async (e) => {
+        //             const typedarray = new Uint8Array(e.target.result);
+        //             const pdf = await pdfjsLib.getDocument(typedarray).promise;
+        //             const page = await pdf.getPage(1);
+        //             const viewport = page.getViewport({ scale: 1 });
+        //             const canvas = document.createElement('canvas');
+        //             canvas.height = viewport.height;
+        //             canvas.width = viewport.width;
+        //             const context = canvas.getContext('2d');
+        //             await page.render({ canvasContext: context, viewport: viewport }).promise;
+        //             resolve(canvas.toDataURL());
+        //         };
+        //         fileReader.readAsArrayBuffer(file);
+        //     });
+        // }
+
+        async function convertPDFtoImage(file) {
+            const fileReader = new FileReader();
+            return new Promise((resolve, reject) => {
+                fileReader.onload = async (e) => {
+                    const typedarray = new Uint8Array(e.target.result);
+                    const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                    const page = await pdf.getPage(1);
+                    // Increase the scale for a higher resolution output
+                    const scale = 2;  // Adjust scale factor as needed for better resolution
+                    const viewport = page.getViewport({ scale: scale });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    resolve(canvas.toDataURL('image/jpeg', 1.0));  // Use JPEG for better quality and compression options
+                };
+                fileReader.readAsArrayBuffer(file);
+            });
+        }
+
+
+        function displayImage(imageData, index) {
+            const container = document.createElement('div');
+            const img = document.createElement('img');
+            const numberLabel = document.createElement('div');
+            numberLabel.textContent = `Document #${index}`;
+            img.src = imageData;
+            container.appendChild(numberLabel);
+            container.appendChild(img);
+            container.appendChild(document.createElement('hr'));
+            previewArea.appendChild(container);
+        }
+
+        document.getElementById('create_pdf').addEventListener('click', async () => {
+            const formData = new FormData();
+            for (const file of files) {
+                formData.append('pdfs', file, file.name);
+            }
+            fetch('/merge_pdfs', {
+                method: 'POST',
+                body: formData
+            }).then(response => response.blob())
+            .then(blob => console.log("Blob received:", blob))
+            .catch(error => console.error('Error merging PDFs:', error));
+        });
+    </script>
+</body>
+</html>
